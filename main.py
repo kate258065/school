@@ -4,9 +4,12 @@ import requests
 import streamlit as st
 
 # 페이지 설정
-st.set_page_config(page_title="학교 급식 찾아보기", page_icon="🏫")
+st.set_page_config(page_title="송탄고등학교 달력별 급식", page_icon="📅", layout="wide")
 
-st.title("🏫 학교 급식 찾아보기")
+# 송탄고등학교 고정 정보
+ATPT_OFCDC_SC_CODE = "J10"  # 경기도교육청
+SD_SCHUL_CODE = "7530480"  # 송탄고등학교
+SCHOOL_NAME = "송탄고등학교"
 
 
 def get_korea_today():
@@ -15,54 +18,13 @@ def get_korea_today():
     return datetime.now(kst_tz).date()
 
 
-def search_school_api(school_name: str):
-    """나이스 학교기본정보 API 호출"""
-    url = "https://open.neis.go.kr/hub/schoolInfo"
-    params = {"Type": "json", "SCHUL_NM": school_name}
-
-    try:
-        response = requests.get(url, params=params, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-
-        if "schoolInfo" in data:
-            return data["schoolInfo"][1]["row"]
-        elif "RESULT" in data and data["RESULT"].get("CODE") == "INFO-200":
-            return []
-        return []
-    except Exception:
-        return []
-
-
-def search_school(query: str):
-    """학교 이름 검색 (줄임말 자동 보정 처리 포함)"""
-    # 1차 검색
-    results = search_school_api(query)
-    if results:
-        return results
-
-    # 2차 검색 (줄임말 보정 처리)
-    expanded_query = query
-    # '여고' -> '여자고등학교'
-    if "여고" in expanded_query:
-        expanded_query = expanded_query.replace("여고", "여자고등학교")
-    # '고' -> '고등학교' (이미 '여자고등학교'로 치환된 경우는 중복 적용 방지)
-    elif "고" in expanded_query and "고등학교" not in expanded_query:
-        expanded_query = expanded_query.replace("고", "고등학교")
-
-    if expanded_query != query:
-        return search_school_api(expanded_query)
-
-    return []
-
-
-def get_meal_info(office_code: str, school_code: str, date_str: str):
+def get_meal_info(date_str: str):
     """나이스 급식식단정보 API 호출 (중식 MMEAL_SC_CODE=2)"""
     url = "https://open.neis.go.kr/hub/mealServiceDietInfo"
     params = {
         "Type": "json",
-        "ATPT_OFCDC_SC_CODE": office_code,
-        "SD_SCHUL_CODE": school_code,
+        "ATPT_OFCDC_SC_CODE": ATPT_OFCDC_SC_CODE,
+        "SD_SCHUL_CODE": SD_SCHUL_CODE,
         "MMEAL_SC_CODE": "2",
         "MLSV_FROM_YMD": date_str,
         "MLSV_TO_YMD": date_str,
@@ -82,70 +44,82 @@ def get_meal_info(office_code: str, school_code: str, date_str: str):
         return None
 
 
-# 1. 학교 검색 섹션
-st.subheader("1. 학교 검색")
-input_name = st.text_input(
-    "학교 이름을 입력하세요 (예: 수도여고, 서울고, 환일고)",
-    placeholder="학교명 입력",
-)
+def parse_menu_items(ddish_nm: str, show_allergy: bool):
+    """<br/>로 구분된 메뉴 항목들을 분리하고 알레르기 번호 표기 여부를 처리"""
+    if not ddish_nm:
+        return []
 
-school_list = []
-if input_name.strip():
-    school_list = search_school(input_name.strip())
+    # <br/> 및 HTML 태그 분리
+    raw_items = ddish_nm.replace("<br/>", "\n").replace("<br>", "\n").split("\n")
+    cleaned_items = []
 
-selected_school = None
+    for item in raw_items:
+        # 태그 제거 및 공백 정리
+        item = re.sub(r"<[^>]+>", "", item).strip()
+        if not item:
+            continue
 
-if input_name.strip():
-    if not school_list:
-        st.info("검색된 학교가 없습니다. 학교 이름을 다시 확인해 주세요.")
-    else:
-        # 학교 목록 드롭다운 옵션 생성 (학교명 (지역))
-        options = {
-            f"{sch['SCHUL_NM']} ({sch.get('LCTN_SC_NM', '지역 정보 없음')})": sch
-            for sch in school_list
-        }
-        selected_option = st.selectbox("학교를 선택하세요:", list(options.keys()))
-        selected_school = options[selected_option]
+        if not show_allergy:
+            # 괄호 안의 알레르기 숫자 및 연관 기호 제거 (예: "(1.2.3.4)" or "(1.2.5..)")
+            item = re.sub(r"\([\d\.]+\)", "", item).strip()
 
-# 2. 날짜 선택 및 급식 조회 섹션
+        cleaned_items.append(item)
+
+    return cleaned_items
+
+
+# 헤더
+st.title(f"🏫 {SCHOOL_NAME} 달력별 급식")
+st.caption("날짜를 선택하여 중식 메뉴와 알레르기 및 칼로리 정보를 확인하세요.")
+
+# 상단 컨트롤: 날짜 선택과 알레르기 정보 스위치를 나란히 배치
+col_date, col_toggle = st.columns([2, 1])
+
+with col_date:
+    today_kst = get_korea_today()
+    selected_date = st.date_input("📅 날짜 선택", value=today_kst)
+
+with col_toggle:
+    st.write("")  # 수평 맞춤용 여백
+    st.write("")
+    show_allergy = st.toggle("알레르기 정보 보기", value=True)
+
 st.markdown("---")
-st.subheader("2. 급식 날짜 선택")
 
-today_kst = get_korea_today()
-selected_date = st.date_input("조회할 날짜를 선택하세요", value=today_kst)
-
-if selected_school and selected_date:
+if selected_date:
     ymd_str = selected_date.strftime("%Y%m%d")
-    meal = get_meal_info(
-        office_code=selected_school["ATPT_OFCDC_SC_CODE"],
-        school_code=selected_school["SD_SCHUL_CODE"],
-        date_str=ymd_str,
-    )
+    meal = get_meal_info(ymd_str)
 
-    st.markdown("---")
-    st.subheader(
-        f"🍱 {selected_school['SCHUL_NM']} ({selected_date.strftime('%Y년 %m월 %d일')}) 중식 메뉴"
-    )
+    formatted_date_str = selected_date.strftime("%Y년 %m월 %d일")
 
     if meal:
-        # HTML 태그 <br/> 제거 및 줄바꿈 처리
-        raw_ddish = meal.get("DDISH_NM", "")
-        formatted_ddish = raw_ddish.replace("<br/>", "\n").replace("<br>", "\n")
-        
-        # 정규식을 이용해 HTML/XML 잔여 태그 제거
-        formatted_ddish = re.sub(r"<[^>]+>", "", formatted_ddish)
-
+        ddish_nm = meal.get("DDISH_NM", "")
         cal_info = meal.get("CAL_INFO", "정보 없음")
+        menu_items = parse_menu_items(ddish_nm, show_allergy)
 
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.markdown("**[오늘의 식단]**")
-            st.text(formatted_ddish)
+        st.subheader(f"🍱 {formatted_date_str} 중식 메뉴")
 
-        with col2:
-            st.markdown("**[열량 정보]**")
-            st.info(f"🔥 {cal_info}")
+        # 주요 요약 메트릭 카드 (메뉴 가짓수 & 칼로리)
+        m_col1, m_col2 = st.columns(2)
+        with m_col1:
+            st.metric(label="🍽️ 메뉴 수", value=f"{len(menu_items)}개")
+        with m_col2:
+            st.metric(label="🔥 총 칼로리", value=cal_info)
+
+        st.markdown("##### 📋 오늘의 메뉴 구성")
+
+        # 메뉴 항목을 카드 형태로 나란히 배치 (한 줄에 최대 4개씩)
+        if menu_items:
+            num_cols = min(4, len(menu_items))
+            cols = st.columns(num_cols)
+
+            for idx, item in enumerate(menu_items):
+                col_idx = idx % num_cols
+                with cols[col_idx]:
+                    with st.container(border=True):
+                        st.markdown(f"**{item}**")
+        else:
+            st.info("등록된 메뉴 항목이 없습니다.")
+
     else:
-        st.warning("해당 날짜에는 급식 정보(중식)가 없습니다.")
-elif not selected_school and input_name.strip():
-    st.caption("위의 검색 결과에서 학교를 먼저 선택해 주세요.")
+        st.info("ℹ️ 급식이 없는 날입니다.")
