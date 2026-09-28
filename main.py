@@ -11,6 +11,18 @@ st.set_page_config(
     page_title="한달동안 많이 나온 급식 순위", page_icon="📊", layout="wide"
 )
 
+# 상단 빠른 페이지 이동 메뉴 추가
+st.markdown("### 📌 페이지 바로가기")
+nav_col1, nav_col2, _ = st.columns([1, 1, 2])
+with nav_col1:
+    if st.button("🏫 1. 학교 급식 찾아보기", use_container_width=True):
+        st.switch_page("main.py")
+with nav_col2:
+    if st.button("📅 2. 우리 학교 달력별 급식", use_container_width=True):
+        st.switch_page("pages/1_달력별_급식.py")
+
+st.markdown("---")
+
 # 송탄고등학교 고정 정보
 ATPT_OFCDC_SC_CODE = "J10"  # 경기도교육청
 SD_SCHUL_CODE = "7530480"  # 송탄고등학교
@@ -108,7 +120,7 @@ def process_menu_data(rows):
 st.title(f"📊 {SCHOOL_NAME} 한 달 동안 많이 나온 급식 순위")
 st.caption("2025년 9월 ~ 2026년 9월 기간 중 선택한 월의 급식 메뉴 출현 빈도를 분석합니다.")
 
-# 1. 월 선택
+# 1. 월 선택 및 슬라이더
 year_months = []
 for y in [2025, 2026]:
     for m in range(1, 13):
@@ -156,8 +168,8 @@ else:
 
     # TOP N 데이터 추출
     df_top = df.head(top_n).copy()
-    
-    # 1위가 맨 위에 오도록 역순 정렬 (Plotly의 가로 막대 특성 대응)
+
+    # 1위가 맨 위에 오도록 역순 정렬 (Plotly 가로 막대 표시 대응)
     df_chart = df_top.iloc[::-1].copy()
 
     # 표시용 텍스트 생성 (예: "3일 (60.0%)")
@@ -182,8 +194,8 @@ else:
         labels={"제공일수": "제공 일수(일)", "메뉴": "메뉴명"},
     )
 
-    # 차트 레이아웃 크기 및 스타일 조정
-    chart_height = max(500, top_n * 45)  # 선택한 개수에 맞춰 높이 자동 조절
+    # 차트 크기 및 디자인
+    chart_height = max(500, top_n * 45)
     fig.update_layout(
         height=chart_height,
         xaxis_title="제공 일수(일)",
@@ -193,15 +205,13 @@ else:
         font=dict(size=14),
     )
 
-    # 막대 안/옆 텍스트 위치 설정
     fig.update_traces(textposition="outside", textfont_size=13)
 
-    # 화면 너비 전체에 차트 출력
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 
-    # 아래쪽에 상세 표 배치
+    # 상세 표
     st.subheader("📋 메뉴별 상세 제공 기록")
     df_display = df_top.copy()
     df_display.index = range(1, len(df_display) + 1)
