@@ -2,6 +2,7 @@ import collections
 from datetime import datetime, timedelta
 import re
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
 
@@ -153,28 +154,63 @@ else:
 
     st.markdown("---")
 
+    # TOP N 데이터 추출
     df_top = df.head(top_n).copy()
+    
+    # 1위가 맨 위에 오도록 역순 정렬 (Plotly의 가로 막대 특성 대응)
+    df_chart = df_top.iloc[::-1].copy()
 
-    col_chart, col_table = st.columns([1.3, 1])
+    # 표시용 텍스트 생성 (예: "3일 (60.0%)")
+    df_chart["표시텍스트"] = (
+        df_chart["제공일수"].astype(str)
+        + "일 ("
+        + df_chart["제공비율(%)"].astype(str)
+        + "%)"
+    )
 
-    with col_chart:
-        st.subheader(f"🏆 가장 자주 나온 메뉴 TOP {top_n}")
+    st.subheader(f"🏆 가장 자주 나온 메뉴 TOP {top_n}")
 
-        # Streamlit 내장 가로 막대 차트 사용 (폰트 깨짐 없음)
-        chart_data = df_top.set_index("메뉴")[["제공일수"]]
-        st.bar_chart(chart_data, horizontal=True)
+    # Plotly 대형 인터랙티브 가로 막대 차트
+    fig = px.bar(
+        df_chart,
+        x="제공일수",
+        y="메뉴",
+        orientation="h",
+        text="표시텍스트",
+        color="제공일수",
+        color_continuous_scale="Blues",
+        labels={"제공일수": "제공 일수(일)", "메뉴": "메뉴명"},
+    )
 
-    with col_table:
-        st.subheader("📋 메뉴별 상세 제공 기록")
-        df_display = df_top.copy()
-        df_display.index = range(1, len(df_display) + 1)
-        df_display.index.name = "순위"
+    # 차트 레이아웃 크기 및 스타일 조정
+    chart_height = max(500, top_n * 45)  # 선택한 개수에 맞춰 높이 자동 조절
+    fig.update_layout(
+        height=chart_height,
+        xaxis_title="제공 일수(일)",
+        yaxis_title="메뉴명",
+        coloraxis_showscale=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        font=dict(size=14),
+    )
 
-        df_display["제공비율"] = df_display["제공비율(%)"].astype(str) + "%"
-        df_display["제공일수"] = df_display["제공일수"].astype(str) + "일"
+    # 막대 안/옆 텍스트 위치 설정
+    fig.update_traces(textposition="outside", textfont_size=13)
 
-        st.dataframe(
-            df_display[["메뉴", "제공일수", "제공비율"]],
-            use_container_width=True,
-        )
-        
+    # 화면 너비 전체에 차트 출력
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # 아래쪽에 상세 표 배치
+    st.subheader("📋 메뉴별 상세 제공 기록")
+    df_display = df_top.copy()
+    df_display.index = range(1, len(df_display) + 1)
+    df_display.index.name = "순위"
+
+    df_display["제공비율"] = df_display["제공비율(%)"].astype(str) + "%"
+    df_display["제공일수"] = df_display["제공일수"].astype(str) + "일"
+
+    st.dataframe(
+        df_display[["메뉴", "제공일수", "제공비율"]],
+        use_container_width=True,
+    )
